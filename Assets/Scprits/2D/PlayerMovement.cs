@@ -1,45 +1,70 @@
+using System.Collections;
 using UnityEngine;
 
 public class PlayerMovement : MonoBehaviour
 {
-    private Animator animator;      
-    private Stage stage;            
-    private int currentTileId;     
+    public float moveDuration = 0.5f;
+
+    private Stage stage;
+    private int currentTileId;
+    private bool isMoving;
 
     private void Awake()
     {
-        animator = GetComponent<Animator>(); 
-        animator.speed = 0f;                 
-        var findGo = GameObject.FindWithTag("Map"); 
-        stage = findGo.GetComponent<Stage>();       
+        stage = GameObject.FindWithTag("Map").GetComponent<Stage>();
     }
 
     private void Update()
     {
-        var direection = Sides.None;                     
-        if (Input.GetKeyDown(KeyCode.UpArrow))            
-            direection = Sides.Top;
-        else if (Input.GetKeyDown(KeyCode.DownArrow))     
-            direection = Sides.Bottom;
-        else if (Input.GetKeyDown(KeyCode.RightArrow))    
-            direection = Sides.Right;
-        else if (Input.GetKeyDown(KeyCode.LeftArrow))     
-            direection = Sides.Left;
+        if (isMoving) return;
 
-        if (direection != Sides.None) 
-        {
-            var targetTile = stage.Map.tiles[currentTileId].adjacents[(int)direection]; // 해당 방향 인접 타일
-            if (targetTile != null && targetTile.CanMove) // 인접 타일이 존재하고 이동 가능하면
-            {
-                MoveTo(targetTile.id); // 이동
-            }
-        }
+        // 방향키 입력 감지
+        var direction = Sides.None;
+
+        if      (Input.GetKeyDown(KeyCode.UpArrow))    direction = Sides.Top;
+        else if (Input.GetKeyDown(KeyCode.DownArrow))  direction = Sides.Bottom;
+        else if (Input.GetKeyDown(KeyCode.RightArrow)) direction = Sides.Right;
+        else if (Input.GetKeyDown(KeyCode.LeftArrow))  direction = Sides.Left;
+
+        if (direction == Sides.None) return;
+
+        // 해당 방향의 인접 타일이 존재하고 이동 가능하면 이동
+        var targetTile = stage.Map.tiles[currentTileId].adjacents[(int)direction];
+        if (targetTile != null && targetTile.CanMove)
+            MoveTo(targetTile.id);
     }
 
-    public void MoveTo(int tileId)
+    // 초기화 시 사용: 즉시 해당 타일로 이동
+    public void Teleport(int tileId)
     {
-        currentTileId = tileId;                          // 현재 타일 ID 갱신
-        transform.position = stage.GetTilePos(currentTileId); // 월드 좌표로 이동
-        stage.RevealTiles(tileId, 1);                    // 반경 1(3x3) 범위 FOW 공개
+        currentTileId = tileId;
+        transform.position = stage.GetTilePos(tileId);
+        stage.VisitCheck(tileId);
+    }
+
+    // 방향키 입력 시 사용: 부드럽게 해당 타일로 이동
+    private void MoveTo(int tileId)
+    {
+        currentTileId = tileId;
+        stage.VisitCheck(tileId);
+        StartCoroutine(SmoothMove(stage.GetTilePos(tileId)));
+    }
+
+    // moveDuration 시간 동안 Lerp로 target까지 이동
+    private IEnumerator SmoothMove(Vector3 target)
+    {
+        isMoving = true;
+        var start = transform.position;
+        float elapsed = 0f;
+
+        while (elapsed < moveDuration)
+        {
+            elapsed += Time.deltaTime;
+            transform.position = Vector3.Lerp(start, target, elapsed / moveDuration);
+            yield return null;
+        }
+
+        transform.position = target;
+        isMoving = false;
     }
 }
