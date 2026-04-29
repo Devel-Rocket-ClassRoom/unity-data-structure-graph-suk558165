@@ -2,58 +2,113 @@ using UnityEngine;
 
 public enum Sides
 {
-    None   = -1, 
-    Top    =  0, 
-    Left   =  1, 
-    Right  =  2,
-    Bottom =  3  
+    None = -1,
+    Top,
+    Left,
+    Right,
+    Bottom
 }
+
 
 public class Tile
 {
-    public int id;                          
-    public Tile[] adjacents = new Tile[4];  
-    public int autoTileId;                  
-    public int fowTileId;                
-    public bool isVisited;                 
+    public int id;
+    public int autoTileId;  // 에셋의 인덱스로 사용
+    public int fogTileId = -1;  // 꽉 채워진 안개로 초기화
 
-    public bool CanMove => autoTileId != (int)TileTypes.Empty; 
+    public Tile[] adjacents = new Tile[4];  // 인접 노드 배열 (없으면 null)
 
-    // 인접 연결 상태를 비트마스크로 autoTileId에 반영
+    public bool isVisited = false;
+
+    // Empty와 Mountains는 이동 불가
+    public bool CanMove => autoTileId != (int)TileTypes.Empty && autoTileId != (int)TileTypes.Mountains;
+
+    // 타일 종류별 이동 비용 (A* 가중치)
+    public int MoveCost => (TileTypes)autoTileId switch
+    {
+      TileTypes.Grass => 1,
+      TileTypes.Tree  => 2,
+      TileTypes.Hills => 4,
+      TileTypes.Towns => 1,
+      TileTypes.Castle => 1,
+      TileTypes.Mountains => int.MaxValue,  // 통과 불가
+      TileTypes.Empty => int.MaxValue,      // 통과 불가
+      _ => 1                                // 해안선 타일(0~14): 통과 가능
+    };
+
+    // A* 경로 역추적용 이전 타일 포인터
+    public Tile previous = null;
+
     public void UpdateAutoTileId()
     {
-        autoTileId = 0;                              // 초기화
-        for (int i = 0; i < adjacents.Length; i++)  // 4방향 순회
-        {
-            if (adjacents[i] != null)                // 연결된 이웃이 있으면
-                autoTileId |= (1 << i);             // 해당 방향 비트 ON
-        }
-    }
+        autoTileId = 0;
 
-    // 특정 타일과의 인접 연결 제거 후 autoTileId 갱신
-    public void RemoveAdjacents(Tile tile)
-    {
-        for (int i = 0; i < adjacents.Length; ++i)  // 4방향 순회
+        // 인접 타일이 존재하는 방향의 비트를 켬 (스프라이트 인덱스 결정)
+        for (int i = 0; i < adjacents.Length; i++)
         {
-            if (adjacents[i] == null) continue;      // 연결 없으면 skip
-            if (adjacents[i].id == tile.id)          // 제거 대상 타일이면
+            if (adjacents[i] != null)
             {
-                adjacents[i] = null;                 // 연결 끊기
-                UpdateAutoTileId();                  // 비트마스크 갱신
-                break;                               // 중복 없으므로 즉시 종료
+                autoTileId |= 1 << i;
             }
         }
     }
 
-    // 모든 인접 연결 제거 (상대 타일에서도 이 타일을 제거)
+    public void UpdateFogTileId()
+    {
+        fogTileId = 0;
+
+        // 인접 타일이 없거나 미방문이면 해당 방향 안개 비트를 켬
+        for (int i = 0; i < adjacents.Length; i++)
+        {
+            if (adjacents[i] == null || !adjacents[i].isVisited)
+            {
+                fogTileId |= 1 << i;
+            }
+        }
+    }
+
+    public void Visit()
+    {
+        if (isVisited) return;  // 이미 방문했으면 스킵
+
+        isVisited = true;
+        // 인접 타일들의 안개 상태 갱신
+        foreach (var adjacent in adjacents)
+        {
+            if (adjacent != null)
+            {
+                adjacent.UpdateFogTileId();
+            }
+        }
+    }
+
+    public void RemoveAdjacents(Tile tile)
+    {
+        // 특정 타일과의 인접 관계를 제거
+        for (int i = 0; i < adjacents.Length; i++)
+        {
+            if (adjacents[i] == null) continue;
+
+            if (adjacents[i].id == tile.id)
+            {
+                adjacents[i] = null;
+                UpdateAutoTileId();  // 스프라이트 인덱스 재계산
+                break;
+            }
+        }
+    }
+
     public void ClearAdjacents()
     {
-        for (int i = 0; i < adjacents.Length; ++i)  // 4방향 순회
+        // 모든 인접 관계를 양방향으로 제거 (물/빈 타일로 만들 때 사용)
+        for (int i = 0; i < adjacents.Length; i++)
         {
-            if (adjacents[i] == null) continue;              // 연결 없으면 skip
-            adjacents[i].RemoveAdjacents(this);              // 상대 타일에서도 나를 제거
-            adjacents[i] = null;                             // 내 연결도 끊기
+            if (adjacents[i] == null) continue;
+
+            adjacents[i].RemoveAdjacents(this);  // 상대방도 나를 제거
+            adjacents[i] = null;
         }
-        UpdateAutoTileId(); // 모든 연결 제거 후 비트마스크 갱신
+
+        UpdateAutoTileId();
     }
 }
